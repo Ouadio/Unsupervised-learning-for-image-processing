@@ -1,0 +1,347 @@
+---
+title: "Apprentissage non supervisé : Applications pour le traitement d'images numériques"
+subtitle : "Réduction de dimension (ACP) et clustering (K-means) d'images numériques"
+author: "Elfarouki Ouadie"
+date: "December 25, 2018"
+output: 
+    html_document:
+        toc : true
+        toc_depth : 4
+        number_sections : false
+fontsize : 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+\newpage     
+
+## I. Présentation    
+
+\ \ On se propose dans le présent travail, d'exploiter des modèles d'apprentissage automatique non-supervisé pour le cas particulier de données de type **Image Numérique**. On traitera pour cette fin les deux cas de figure possibles des modèles non supervisés :  
+- La réduction de dimension avec l'Analyse en COmposante Principale.  
+- Le Clustering (Segmentation) avec le modèle des K-Moyennes (K-means).  
+
+*Mots clés : Apprentissage non supervisé, ACP,composantes principales, Réduction de dimension, Clustering, Kmeans, Image numérique* 
+
+
+## II. Description des données  
+### II.1 Vue globale   
+\ \ Une image numérique peut être considérée comme une représentation à deux dimensions ou plus des valeurs de pixels qu'on peut écrire sous la forme d'une matrice de données 2D (image en niveaux de gris) ou 3D (image en couleurs). La valeur d'un pixel est soit un scalaire $v\in [0,1]$ si il s'agit d'une image monochromatique ou bien un vecteur numérique de longueur 3 $v\in {[0,1]}^3$ s'il s'agit d'une image polychromatique à 3 couches (RGB par exemple).  
+
+
+### II.2 Lecture et affichage des données  
+\ \ On a choisi une image représentant une photographie du minaret de la mosquée Alkoutubia (Marrakech, Maroc) sur laquelle on distingue au moins deux forme de base : le ciel et le minaret. On commence par lire et explorer l'image avant de la compresser en 2D (niveaux de gris).  
+```{r, cache=TRUE}
+library(jpeg, warn.conflicts = FALSE)
+library(imager, warn.conflicts = FALSE)
+image = readJPEG("mosquee.jpg")
+print(paste("le type de l'image : ", as.character(class(image))), sep="")
+print("la dimension de l'image originale")
+dim(image)
+grey = apply(image, MARGIN = c(1,2), max) #pixel gris = moyenne(pixels RGB)
+print("la dimension de l'image en niveaux de gris")
+dim(grey)
+```
+
+\ \ Les librairies de base sur R ne permettent l'affichage que des images 2D, afin de visualiser l'image originale (3D) on se sert du package *"imager"*.   
+
+```{r, cache=TRUE,fig.height=3.5, fig.width=8, fig.align='center' }
+par(mfrow = c(1,2), mar = c(1,1,2.5,1))
+#Image en niveaux de gris
+image.default(t(grey[nrow(grey):1,]), xaxt = "n", yaxt = "n", col = grey.colors(100))
+title("Image Originale en nuances de gris")
+#Image en couleurs
+#Fonction d'inversion d'image 3D pour des fins d'affichage
+reverseIt = function(image){   
+  new = array(c(t(image[,,1]),t(image[,,2]),t(image[,,3])), 
+              dim = c(dim(image)[2], dim(image)[1],3))
+}
+imageInverse = reverseIt(image = image)
+imageInverse = as.cimg(imageInverse)
+affichageImage = implot(imageInverse, title(""), xaxt = "n", yaxt = "n")
+plot(affichageImage, axes = FALSE)
+title("Image Originale en couleurs")
+```
+
+\newpage  
+
+## III. Réduction de dimension avec l'Analyse en Composante Principale  
+### III.1 Rappel  
+
+\ \ Étant un modèle d'apprentissage non-supervisé, l'Analyse de Composantes Principales n'a besoin que de variables d'entrée représentées par la matrice X (n lignes d'observations et p colonnes de variables) sans étiquettes (labels) y.   
+\ \ L'idée de base de l'ACP est que chacune des n observations se trouve dans un espace à p dimensions, mais  ces dimensions ne sont pas toutes également intéressantes. l'ACP recherche un nombre **réduit** des dimensions les plus intéressantes possibles, où le concept d’intérêt est mesuré par la quantité avec laquelle les observations **varient** selon chaque dimension, ce qui peut également être vu comme degré de conservation de l'information dans les données. \ \ Les dimensions générées par l'ACP sont des combinaisons linéaires des p variables et sont nommées : **Composantes Principales**. Ces composantes sont construites soit de manière itérative en cherchant à chaque itération la combinaison de variables qui comporte le maximum de variance, ou bien de manière algébrique directe avec la décomposition en valeurs singulières (SVD).  Si on projette les observations contenues dans les données sur un ensemble de *m* composantes principales ($m<p$), on obtient une représentation en dimension réduite de notre base de données originale.   
+
+
+
+### III.2 Application 1 : Image en niveaux de gris    
+
+\ \ Puisqu'une image numérique peut être considérée comme une représentation à deux dimensions ou plus des valeurs de pixels et représentée sous la forme d'une matrice de données 2D (image en niveaux de gris) ou 3D (image couleur), l'ACP peut être réalisée sur une telle matrice n x p. On se limitera dans cette partie à l'application de l'ACP pour la réduction d'images monochromes, c'est à dire celles qu'on peut représenter par une matrice de deux dimensions.  
+\ \ Bien que dans le cas des images numériques, les lignes et les colonnes peuvent être considérées indifféremment comme variables ou observations, on se contentera dans cette application de prendre les colonnes de l'image comme variables et les lignes comme observations (le cas contraire peut être obtenu en appliquant une transposée de matrice, la suite du raisonnement deumeurant la même).  
+
+
+```{r, cache=TRUE }
+pc = prcomp(grey, center = FALSE) #Calcul des composantes principales
+print("Dimension de la matrice des composantes principales : ")
+dim(pc$rotation)
+```
+\ \ Comme on l'a mentionné précédement, il s'agit bien d'une analyse de composantes principales suivant les **colonnes**, la dimension de la matrice de rotation (matrice des CP) le confirme puisqu'elle est égale à la transposée de la dimanesion de la matrice de base.  
+Afin d'estimer le nombre de
+```{r, cache=TRUE, fig.align="center",fig.height=3.6}
+par(mar = c(3,3,2,3))
+pc_summary = summary(pc)
+```
+\ \ Importance des 8 premières composantes principales :  
+```{r, cache=TRUE, fig.align="center",fig.height=3.8}
+pc_summary$importance[,1:8]
+barplot( pc_summary$importance[2,1:8], col="brown2", 
+         main="Proportion de variance expliquée par CP")
+```
+
+\ \ On remarque que seules les 3 premières composantes principales expliquent (*ensemble*) plus de 98% de la variance totale dans les données. On se propose donc de vérifier ceci en évaluant la qualité des images obtenues après réduction en fonction du nombre de composantes utilisées pour cette fin.  
+
+```{r, cache=TRUE, fig.height=3.5, fig.width=8}
+par(mfrow = c(1,2), mar=c(2,2,3,2))
+for (i in c(2,3,5,8,16,30, 50,100)) {
+  i = round(i)
+  compressed = pc$x[,1:i] %*% t(pc$rotation[,1:i])
+  image.default(t(compressed[nrow(compressed):1,]), col=grey.colors(i),xaxt = "n", yaxt = "n")
+  myTitle = paste("Réduction avec ",as.character(i)," CP",sep = "")
+  title(myTitle, cex=1)
+}
+```
+
+\ \ La réduction de l'image à l'aide des 3 premières composantes principales a permis de conserver l'allure de base de l'image du minaret, mais il faudra exploiter plus d'une trentaine de composantes principales pour distinguer les petits détails de l'architecture de la mosquée.  
+
+### III.3 Application 2 : Image en couleurs RGB  
+\ \ Afin de généraliser l'approche suivie précédement pour des images en couleur (RGB), il suffit de décomposer l'image polychromatique 3D en 3 images monochromatiques correspondants aux couleurs R, G et B, d'appliquer l'ACP pour chacune d'elles, et reconstituer l'image 3D en superposant ces dernieres ainsi obtenues. C'est ce que permet de retrouver le code ci-dessous.  
+
+```{r, cache=TRUE, fig.height=3.5, fig.width=8}
+par(mfrow = c(1,2), mar=c(2,2,3,2))
+#Boucle sur le nombre des CP à utiliser
+for (j in c(2,5,10,100)){
+  imageRGBcompress = array(data=0, dim = dim(image))
+  #Boucle sur les 3 couches R, G et B
+  for (i in 1:3){
+    monoImage = image[,,i]
+    pcMono = prcomp(monoImage, center = FALSE) #Calcul des CP
+    compressedMono = pcMono$x[,1:j] %*% t(pcMono$rotation[,1:j])
+    #Récupération des j premières CP
+    imageRGBcompress[,,i] = compressedMono
+  }
+  
+  #Affichage de l'image 
+  imageRGBcompress = reverseIt(image = imageRGBcompress)
+  imageRGBcompress  = as.cimg(imageRGBcompress)
+  myTitle = paste("Réduction avec ", as.character(j), "CP", sep = "")
+  imageRGBcompressAff = implot(imageRGBcompress, expr = title(""))
+  plot(imageRGBcompressAff, axes = FALSE)
+  title(myTitle)
+}
+
+```
+\ \ On constate la même tendance des images vers plus de clarté avec l'augmentation du nombre de composantes principales utilisées pour la réduction. Bien que statistiquement parlant, les 3 premières composantes expliquent 98% de la variance totale et l'allure de l'*elbow* du graphe en battons montre que 3 est le nombre optimal des composantes à choisir, la qualité de l'image à obtenir reste un choix subjectif et dépend de l'objectif de la réduction de l'image et son contexte d'utilisation (Médecine, astronomie, Réseaux sociaux...).  
+
+\newpage  
+## IV. Clustering avec la méthode des K-Moyennes  
+### IV.1 Rappel :  
+\ \ La segmentation K-moyennes (K-means) est un modèle d'apprentissage non supervisé dont le but est de trouver des **groupes homogènes** dans les données à partir de certaines *mesures de similarité*. L’algorithme est entrainé de manière itérative pour affecter chaque point de données à l’un des K groupes en fonction des variables fournies et de la norme de distance choisie *(par exemple distance euclidienne)*. Les résultats de l'algorithme de regroupement des moyennes K sont :  
+
+- Les centroïdes des clusters K, qui peuvent être utilisés pour étiqueter de nouvelles données.  
+- Les Étiquettes pour les données d'apprentissage (chaque point de données est attribué au seul cluster auquel il appartient).  
+
+### IV.2 Application 1 : Clustering suivant les valeurs des composantes RGB    
+\ \ Dans le cas des images numériques, la notion de variable au sens commun utilisé en Machine Learning peut signifier les colonnes comme elle peut signifier les lignes, voir aussi les couches de couleurs s'il s'agit d'une image RGB par exemple. On propose dans cette partie une modélisation particulière de l'image numérique : Au lieu de considérer les colonnes comme des variables et les lignes comme des observations (ou vice versa), on va **applatir** l'image pour passer d'une représentation à 2 dimensions en une représentation à une seule dimension, ce qui revient à transformer la matrice 2D en un vecteur 1D et ce pour les 3 couches (R, G et B).    
+```{r, echo=TRUE, cache=TRUE}
+imageDf = array(image, dim = c(dim(image)[1]*dim(image)[2], dim(image)[3]))
+imageDf = data.frame(imageDf)
+names(imageDf) = c("Red","Green","Blue")
+dim(imageDf)
+```
+\ \ L'étape suivante serait d'entrainer le modèle des k-moyennes sur les 3 variables de l'image (R,G et B) ainsi obtenues. On prend à titre d'exemple K = 5.  
+
+```{r, cache=TRUE}
+myKmeans = kmeans(imageDf, centers = 5, iter.max = 1000, 
+                  algorithm = "MacQueen", nstart =5 )
+myCenters = myKmeans$centers   #valeurs des centroids 
+myClusters = myKmeans$cluster  #labels des clusters (de 1 à 5) 
+```
+\ \ On obtient donc les labels des clusters allant de 1 à K ainsi que les valeurs des centroids traduisant la moyenne par cluster.  
+**Interprétation :**   
+\ \ L'algorithme K-means a permis de rassembler au sein de clusters labélisés les pixels ayant des valeurs proches entre eux (distance euclidienne 3D vue qu'on a trois variables R, G et B), et les valeurs des centroids représentent donc les valeurs moyennes de ces pixels semblables.  
+\ \ Afin de mettre en évidence cette intérprétation, on exploite les labels et les centroids retrouvés pour reconstituer l'image à partir des résultats obtenus en inversant l'opération effectuée précédement.  
+
+```{r, cache=TRUE, echo=TRUE, fig.align="center", fig.height=3, fig.width=4}
+par(mar = c(2,1,2.5,1))
+#Création et remplissage du vecteur 
+clustered = vector(mode = "numeric", length= length(myClusters)) 
+colorsVect = vector(mode = "numeric", length = length(myClusters))
+for (i in 1:nrow(myCenters)){
+  indexes = which(myClusters==i)
+  clustered[indexes] = mean(myCenters[i,])
+  colorsVect[indexes] = rgb(red = myCenters[i,1], green = myCenters[i,2], 
+                            blue = myCenters[i,3])
+}
+#Reconstitution de la matrice 2D (image)
+unflattened = matrix(clustered, byrow = FALSE, ncol = ncol(image))
+#La transposée est nécessaire pour l'affichage correct
+image.default(t(unflattened[nrow(unflattened):1,]), col = grey.colors(2), xaxt = "n", yaxt = "n")  
+title("Clustering avec K = 5")
+```
+\ \ Ce qu'on vient de récupérer est une image 2D monochrome formée uniquement de pixels ayant 5 valeurs(nombre de clusters utilisés), et ce à partir d'une image plus compliquée contenant 3 couches et une multitude de valeurs de pixels.   
+
+- **Avant le clustering**   
+Le nombre total de valeurs utilisées pour la description de l'image originale :  
+```{r, cache=TRUE}
+uniqueLenBefore = apply(image, MARGIN = 3, 
+                        FUN = function(x){
+                          return(length(unique(as.vector(x))))})
+prod(uniqueLenBefore)
+```  
+
+- **Apres le clustering**  
+Le nombre total de valeurs utilisées pour la description de l'image segmentée :  
+```{r}
+uniqueLenAfter = length(unique(as.vector(unflattened)))
+prod(uniqueLenAfter)
+```
+
+
+\ \ On se propose maintenant de visualiser le résultat de clustering en variant la valeur de K.  
+```{r, cache=TRUE, fig.align="center", fig.height=3, fig.width=8}
+par(mfrow=c(1,2), mar = c(2,1,2.5,1))
+totalWithinss = vector(mode = "numeric", length = 0)
+for (k in c(2,3,10,50)){
+  myKmeans = kmeans(imageDf, centers = k, iter.max = 1000, 
+                  algorithm = "MacQueen", nstart =5 ) 
+  myCenters = myKmeans$centers   #valeurs des centroids 
+  myClusters = myKmeans$cluster  #labels des clusters (de 1 à k)
+  totalWithinss = c(totalWithinss,myKmeans$tot.withinss)
+  #Création et remplissage du vecteur 
+  clustered = vector(mode = "numeric", length= length(myClusters)) 
+  for (i in 1:nrow(myCenters)){
+    indexes = which(myClusters==i)
+    clustered[indexes] = mean(myCenters[i,])
+  }
+  myTitle = paste("Clustering avec K=", as.character(k), sep = "")
+  #Reconstitution de la matrice 2D (image)
+  unflattened = matrix(clustered, byrow = FALSE, ncol = ncol(image))
+  #La transposée est nécessaire pour l'affichage correct
+  image.default(t(unflattened[nrow(unflattened):1,]), col = grey.colors(k), xaxt = "n", yaxt = "n") 
+  title(myTitle)
+}
+```
+\ \ Les exemples d'images segmentées selon différentes valeurs de K montrent clairement une grande amélioration de la qualité en passant de 3 à 10 clusters, ce qui laisse à penser que le nombre optimal de K selon la méthode de l'*elbow* se situe quelque part entre ces deux valeurs. Le graphe de l’inertie intra-classes (*somme des carrées des écarts entre les points au sein de chaque cluster*) en fonction de k le confirme.  
+
+```{r, fig.align="center", fig.height=4, fig.width=6, echo=FALSE}
+plot(c(2,3,10,50), totalWithinss, type = "b", pch=19, col="brown2", 
+     xlab = "k", ylab = "somme des écarts intra-classes", 
+     main = "Somme des écarts intra-classes en fonction de k" )
+```
+
+
+### IV.3 Application 2 : Clustering suivant la position et les valeurs des pixels  
+\ \ Dans cet exemple, on prend en considération la position des pixels en plus de leurs valeurs R G B pour générer les clusters. Dans ce cas, les clusters contiendront des pixels non seulement proches en terme de **valeur**, mais également en terme de **positionnement dans l'image**. On s'attend donc à un résultat semblable à une discrétisation des couleurs de l'image par régions.  
+\ \ On commence par l'ajout des coordonnées des pixels comme nouvelles variables dans la table de données déjà crée *'imageDf'*. (*On divise chacun d'eux par la valeur maximale afin de s'assurer que toutes les variables sont de même échelle* $\in[0,1]$).  
+
+```{r, cache=TRUE}
+#Coordonnées des pixels
+xCoord = rep(c(1:dim(image)[1]), dim(image)[2])
+xCoord = xCoord/max(xCoord)
+yCoord = rep(c(1:dim(image)[2]), each = dim(image)[1])
+yCoord = yCoord/max(yCoord)
+imageDf = data.frame(cbind(imageDf, xCoord, yCoord))
+head(imageDf)
+```
+
+\ \ Vient après l'application de la méthode K-means suivant les 5 variables de la table de données *"imageDf"*. On pose à titre d'exemple k = 10.  
+
+```{r, cache=TRUE}
+myKm = kmeans(imageDf, centers = 5, iter.max = 300,  algorithm = "MacQueen")
+myCenters = myKm$centers
+myClusters = myKm$cluster
+head(myCenters)
+```
+\ \ Afin de reconstituer l'image segmentée, on reconstitue chacune des 3 couches R, G et B à partir des valeurs calculées des centroids *(récupérées depuis la table 'myCenters')* avant de les rassembler pour obtenir l'image 3D de mêmes dimensions que l'image originale.    
+
+```{r, cache=TRUE,fig.align="center", fig.height=4, fig.width=5}
+par(mar = c(2,1,2.5,1))
+#Initialisation de l'image à récupérer
+clusteredImage = array(dim = dim(image))
+#Boucle sur les couches R, G, B
+for(i in 1:3){
+  clustered = vector(mode = "numeric", length =  nrow(imageDf)) 
+  #Boucle sur les centroids (de longueur k)
+  for (j in 1:nrow(myCenters)){
+    indexes = which(myClusters==j)
+    clustered[indexes] = myCenters[j,i]
+  }
+  #Reconstitution de l'image 2D
+  unflattened = matrix(clustered, byrow = FALSE, ncol = ncol(grey))
+  clusteredImage[,,i] = unflattened
+}
+#Affichage de l'image segmentée
+reversed = reverseIt(clusteredImage)
+reversed = as.cimg(reversed)
+reversedPlot = implot(reversed, expr = text('', x=0, y = 0))
+plot(reversedPlot, axes = FALSE)
+title("Clustering avec K = 5")
+```
+
+\ \ On voit bien que l'image récupérée comporte les couleurs de base de l'image originale et conserve l'allure générale de l'objet photographié (minaret de la mosquée dans notre cas).  
+\ \ Afin de visualiser l'effet du nombre de clusters K utilisé dans k-means sur la qualité de l'image, on compare le rendu de 6 valeurs particulières de K.  
+
+```{r, cache=TRUE, fig.align="center", fig.height=4, fig.width=8}
+par(mfrow = c(1,2), mar = c(2,2,3,2))
+totalWithinss2 = vector(mode = "numeric", length = 0)
+for(k in c(2,3,10,20,50,100)){
+  myKm = kmeans(imageDf, centers = k, iter.max = 300,  algorithm = "MacQueen")
+  myCenters = myKm$centers
+  myClusters = myKm$cluster
+  totalWithinss2 = c(totalWithinss2,myKm$tot.withinss)
+  #Initialisation de l'image à récupérer
+  clusteredImage = array(dim = dim(image))
+  #Boucle sur les couches R, G, B
+  for(i in 1:3){
+    clustered = vector(mode = "numeric", length =  nrow(imageDf)) 
+    #Boucle sur les centroids
+    for (j in 1:nrow(myCenters)){
+      indexes = which(myClusters==j)
+      clustered[indexes] = myCenters[j,i]
+    }
+  #Reconstitution de l'image 2D
+  unflattened = matrix(clustered, byrow = FALSE, ncol = ncol(grey))
+  clusteredImage[,,i] = unflattened
+  }
+  #Affichage de l'image segmentée
+  reversed = reverseIt(clusteredImage)
+  reversed = as.cimg(reversed)
+  myTitle = paste("Clustering avec K = ", as.character(k))
+  reversedPlot = implot(reversed, expr = text('', x=0, y = 0))
+  plot(reversedPlot, axes = FALSE)
+  title(myTitle)
+}
+```
+\ \ Les mêmes remarques observées dans l'application précédente restent valables, notamment en terme d'augementation de la qualité de l'image avec le nombre de clusters utilisés. Ce qu'il y'a de nouveau dans ce cas c'est que l'effet du clustering spacial est visible puisqu'on remarque des discontinuités de couleurs par régions dans l'image, ce qui n'est pas surprenant vue qu'on a utilisé le positionnement des pixels comme variables de décision en plus des valeurs RGB.  
+\ \ Le choix du nombre de cluster reste subjectif et dépend de l'effet souhaité dans l'image, toutefois, on voit que le nombre optimal (statistiquement parlant) de clusters est dans les alontours de k = 20. Le graphe ci-dessous montre un effet *elbow* qui permet de choisir la valeur optimale.  
+```{r, fig.align="center", fig.height=4, fig.width=6, echo=FALSE}
+plot(c(2,3,10,20,50,100), totalWithinss2, type = "b", pch=19, col="brown2", 
+     ylab = "somme des écarts intra-classes", xlab = "k",
+     main = "Somme des écarts intra-classes en fonction de k" )
+```
+
+
+\newpage  
+
+## V. Conclusion  
+
+\ \ Les modèles d'apprentissage non supervisé trouvent leurs applications dans plusieurs domaines et leur utilisation se voit d'une grande utilité que ce soit pour l'exploration préliminaire des données, ou bien comme une finalité en elle même. Nous avons parcouru, tout au long du présent travail, plusieurs applications de ce type de modèles pour des fins relevant de la discipline de *traitement d'images*, qui elle même peut être répartie en plusieurs sous-applications en fonction du domaine et des effets recherchés.  
+\ \ Les différentes applications présentées, à savoir celles basées sur la réduction de dimension et celles basées sur la segmentation, permettent de générer des représentations moins *complexes* des images numériques tout en conservant un degré d'information suffisant permettant de reconnaitre leur contenu. Ces versions *réduites* peuvent servir comme point de départ pour d'autres algorithmes d'apprentissage automatique supervisé, on retrouve ceci dailleurs dans pas mal de disciplines comme dans l'imagerie médicale et l'astronomie etc...  
+
+
+
+
+
+
+
